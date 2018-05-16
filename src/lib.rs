@@ -8,8 +8,8 @@
 )]
 
 //! This crate provides a finite state machine for a thermostat controlling a centralized HVAC
-//! system. It is a component of the [UberHome](https://labs.uberfoo.net/uberhome) home automation
-//! platform.
+//! system or other heating and/or cooling apparatus. It is a component of the
+//! [UberHome](https://labs.uberfoo.net/uberhome) home automation platform.
 //!
 //! The goal of this component is to provide an abstracted thermostat that can be embedded in any
 //! device where temperature and/or humidity must be controlled (e.g., homes, offices,
@@ -25,7 +25,7 @@
 //! The thermostat uses double-precision floating-point format for representing both temperature in
 //! degrees Celsius and percent relative humidity.
 //!
-//! # Example Implementation
+//! # Usage Example
 //!
 //! ```
 //! extern crate uberhome_thermostat;
