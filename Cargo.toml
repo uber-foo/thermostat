@@ -1,7 +1,11 @@
 [package]
-name = "uberhome_thermostat"
+name = "thermostat"
 version = "0.0.1"
 authors = ["Sean Bruton <sean@uberfoo.net>"]
+description = "Finite state machine for a thermostat controlling a centralized HVAC system or other heating and/or cooling apparatus"
+repository = "https://github.com/uber-foo/cryptonomicon"
+license = "MIT OR Apache-2.0"
+keywords = ["thermostat", "hvac"]
+categories = ["data-structures", "embedded", "no-std"]
 
 [dependencies]
-error-chain = "0.11.0"
