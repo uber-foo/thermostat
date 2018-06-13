@@ -1,15 +1,15 @@
-#![doc(html_root_url = "https://docs.rs/uberhome-thermostat")]
-#![doc(issue_tracker_base_url = "https://github.com/uber-foo/uberhome-thermostat/issues/")]
+#![doc(html_root_url = "https://docs.rs/thermostat")]
+#![doc(issue_tracker_base_url = "https://github.com/uber-foo/thermostat/issues/")]
 #![deny(
     missing_docs, missing_debug_implementations, missing_copy_implementations, trivial_casts,
     trivial_numeric_casts, unsafe_code, unstable_features, unused_import_braces,
     unused_qualifications, unused_variables, unreachable_code, unused_comparisons, unused_imports,
     unused_must_use
 )]
+#![no_std]
 
 //! This crate provides a finite state machine for a thermostat controlling a centralized HVAC
-//! system or other heating and/or cooling apparatus. It is a component of the
-//! [UberHome](https://labs.uberfoo.net/uberhome) home automation platform.
+//! system or other heating and/or cooling apparatus.
 //!
 //! The goal of this component is to provide an abstracted thermostat that can be embedded in any
 //! device where temperature and/or humidity must be controlled (e.g., homes, offices,
@@ -28,9 +28,9 @@
 //! # Usage Example
 //!
 //! ```
-//! extern crate uberhome_thermostat;
+//! extern crate thermostat;
 //!
-//! use uberhome_thermostat::{Measurement, OperatingMode, Thermostat};
+//! use thermostat::{Measurement, OperatingMode, Thermostat, Error as ThermostatError};
 //!
 //! enum HvacStatus {
 //!     HeatOn,
@@ -38,37 +38,37 @@
 //!     Off,
 //! }
 //!
-//! fn call_for_heat() -> Result<(), String> {
+//! fn call_for_heat() -> Result<(), ThermostatError> {
 //!     println!("calling for heat...");
 //!     Ok(())
 //! }
 //!
-//! fn stop_call_for_heat() -> Result<(), String> {
+//! fn stop_call_for_heat() -> Result<(), ThermostatError> {
 //!     println!("stopping call for heat...");
 //!     Ok(())
 //! }
 //!
-//! fn call_for_cool() -> Result<(), String> {
+//! fn call_for_cool() -> Result<(), ThermostatError> {
 //!     println!("calling for cool...");
 //!     Ok(())
 //! }
 //!
-//! fn stop_call_for_cool() -> Result<(), String> {
+//! fn stop_call_for_cool() -> Result<(), ThermostatError> {
 //!     println!("stopping call for cool...");
 //!     Ok(())
 //! }
 //!
-//! fn call_for_fan() -> Result<(), String> {
+//! fn call_for_fan() -> Result<(), ThermostatError> {
 //!     println!("calling for fan...");
 //!     Ok(())
 //! }
 //!
-//! fn stop_call_for_fan() -> Result<(), String> {
+//! fn stop_call_for_fan() -> Result<(), ThermostatError> {
 //!     println!("stopping call for fan...");
 //!     Ok(())
 //! }
 //!
-//! fn measure_temp_and_humidity() -> Result<Measurement, String> {
+//! fn measure_temp_and_humidity() -> Result<Measurement, ThermostatError> {
 //!     Ok(Measurement {
 //!         temperature: 15.0,
 //!         humidity: 40.0,
@@ -99,15 +99,16 @@
 //! }
 //! ```
 
-#[macro_use]
-extern crate error_chain;
+use core::result::Result;
 
-mod errors {
-    // Create the Error, ErrorKind, ResultExt, and Result types
-    error_chain!{}
+/// Thermostat errors
+#[derive(Debug, Copy, Clone)]
+pub enum Error {
+    /// Indicates a state change cannot be performed due to a missing handler method
+    NoHandlerMethodRegistered,
+    /// Indicates a measurements cannot be made due to a missing measurement handler method
+    NoMeasurementHandlerRegistered,
 }
-
-use errors::*;
 
 // Safe temperatures control absolute limits that the thermostat logic will allow in any operating
 // mode. No set temperature may exceed these bounds nor will normal operating mode constraints on
@@ -120,7 +121,7 @@ const DEFAULT_CURRENT_TEMPERATURE: f64 =
 
 const DEFAULT_OPERATING_MODE: OperatingMode = OperatingMode::Disabled;
 
-/// Various thermostat operating modes.
+/// Various thermostat operating modes
 #[derive(Debug, Copy, Clone, PartialEq)]
 #[repr(u8)]
 pub enum OperatingMode {
@@ -136,7 +137,7 @@ pub enum OperatingMode {
     DisabledUnsafe,
 }
 
-/// Temperature and humidity measurement.
+/// Temperature and humidity measurement
 #[derive(Copy, Clone, Debug)]
 pub struct Measurement {
     /// current temperature in degrees Celsius
@@ -145,7 +146,7 @@ pub struct Measurement {
     pub humidity: f64,
 }
 
-/// Thermostat state machine.
+/// Thermostat state machine
 #[derive(Copy, Clone, Debug)]
 pub struct Thermostat {
     operating_mode: OperatingMode,
@@ -154,27 +155,25 @@ pub struct Thermostat {
     minimum_set_temperature: f64,
     maximum_set_temperature: f64,
     current_temperature: f64,
-    call_for_heat: fn() -> std::result::Result<(), String>,
-    stop_call_for_heat: fn() -> std::result::Result<(), String>,
+    call_for_heat: fn() -> Result<(), Error>,
+    stop_call_for_heat: fn() -> Result<(), Error>,
     heat_handlers_registered: bool,
-    call_for_cool: fn() -> std::result::Result<(), String>,
-    stop_call_for_cool: fn() -> std::result::Result<(), String>,
+    call_for_cool: fn() -> Result<(), Error>,
+    stop_call_for_cool: fn() -> Result<(), Error>,
     cool_handlers_registered: bool,
-    call_for_fan: fn() -> std::result::Result<(), String>,
-    stop_call_for_fan: fn() -> std::result::Result<(), String>,
+    call_for_fan: fn() -> Result<(), Error>,
+    stop_call_for_fan: fn() -> Result<(), Error>,
     fan_handlers_registered: bool,
-    measure: fn() -> std::result::Result<Measurement, String>,
+    measure: fn() -> Result<Measurement, Error>,
     measure_handler_registered: bool,
 }
 
-fn null_handler() -> std::result::Result<(), String> {
-    let msg = "no call method registered";
-    Err(msg.to_string())
+fn null_handler() -> Result<(), Error> {
+    Err(Error::NoHandlerMethodRegistered)
 }
 
-fn null_measure_handler() -> std::result::Result<Measurement, String> {
-    let msg = "no measurements available -- no measurement handler registered";
-    Err(msg.to_string())
+fn null_measure_handler() -> Result<Measurement, Error> {
+    Err(Error::NoMeasurementHandlerRegistered)
 }
 
 impl Default for Thermostat {
@@ -206,7 +205,7 @@ impl Thermostat {
     ///
     /// Will return an Err result if the specified operating mode is incompatible with the current
     /// configuration.
-    pub fn change_operating_mode(&mut self, operating_mode: OperatingMode) -> Result<()> {
+    pub fn change_operating_mode(&mut self, operating_mode: OperatingMode) -> Result<(), Error> {
         self.operating_mode = operating_mode;
         Ok(())
     }
@@ -222,7 +221,7 @@ impl Thermostat {
     ///
     /// An Err Result is returned if the specified temperature is not within the bounds of the
     /// minimum and maximum safe temperatures.
-    pub fn change_maximum_safe_temperature(&mut self, temperature: f64) -> Result<()> {
+    pub fn change_maximum_safe_temperature(&mut self, temperature: f64) -> Result<(), Error> {
         self.maximum_safe_temperature = temperature;
         Ok(())
     }
@@ -238,7 +237,7 @@ impl Thermostat {
     ///
     /// An Err Result is returned if the specified temperature is not within the bounds of the
     /// minimum and maximum safe temperatures.
-    pub fn change_minimum_safe_temperature(&mut self, temperature: f64) -> Result<()> {
+    pub fn change_minimum_safe_temperature(&mut self, temperature: f64) -> Result<(), Error> {
         self.minimum_safe_temperature = temperature;
         Ok(())
     }
@@ -254,7 +253,7 @@ impl Thermostat {
     ///
     /// An Err Result is returned if the specified temperature is not within the bounds of the
     /// minimum and maximum safe temperatures.
-    pub fn change_maximum_set_temperature(&mut self, temperature: f64) -> Result<()> {
+    pub fn change_maximum_set_temperature(&mut self, temperature: f64) -> Result<(), Error> {
         self.maximum_set_temperature = temperature;
         Ok(())
     }
@@ -270,7 +269,7 @@ impl Thermostat {
     ///
     /// An Err Result is returned if the specified temperature is not within the bounds of the
     /// minimum and maximum safe temperatures.
-    pub fn change_minimum_set_temperature(&mut self, temperature: f64) -> Result<()> {
+    pub fn change_minimum_set_temperature(&mut self, temperature: f64) -> Result<(), Error> {
         self.minimum_set_temperature = temperature;
         Ok(())
     }
@@ -282,8 +281,8 @@ impl Thermostat {
     /// Register handlers to call for heat and cancel a call for heat.
     pub fn use_heat(
         &mut self,
-        call_for_heat: fn() -> std::result::Result<(), String>,
-        stop_call_for_heat: fn() -> std::result::Result<(), String>,
+        call_for_heat: fn() -> Result<(), Error>,
+        stop_call_for_heat: fn() -> Result<(), Error>,
     ) {
         self.call_for_heat = call_for_heat;
         self.stop_call_for_heat = stop_call_for_heat;
@@ -293,8 +292,8 @@ impl Thermostat {
     /// Register handlers to call for cool and cancel a call for cool.
     pub fn use_cool(
         &mut self,
-        call_for_cool: fn() -> std::result::Result<(), String>,
-        stop_call_for_cool: fn() -> std::result::Result<(), String>,
+        call_for_cool: fn() -> Result<(), Error>,
+        stop_call_for_cool: fn() -> Result<(), Error>,
     ) {
         self.call_for_cool = call_for_cool;
         self.stop_call_for_cool = stop_call_for_cool;
@@ -304,8 +303,8 @@ impl Thermostat {
     /// Register handlers to call for fan and cancel a call for fan.
     pub fn use_fan(
         &mut self,
-        call_for_fan: fn() -> std::result::Result<(), String>,
-        stop_call_for_fan: fn() -> std::result::Result<(), String>,
+        call_for_fan: fn() -> Result<(), Error>,
+        stop_call_for_fan: fn() -> Result<(), Error>,
     ) {
         self.call_for_fan = call_for_fan;
         self.stop_call_for_fan = stop_call_for_fan;
@@ -313,7 +312,7 @@ impl Thermostat {
     }
 
     /// Register handler to obtain current measurements
-    pub fn use_measure(&mut self, measure: fn() -> std::result::Result<Measurement, String>) {
+    pub fn use_measure(&mut self, measure: fn() -> Result<Measurement, Error>) {
         self.measure = measure;
         self.measure_handler_registered = true;
     }
