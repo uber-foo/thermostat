@@ -115,7 +115,7 @@ pub enum Error {
 // the usage of the heating or cooling system be respected. The only way to override this behavior
 // is to set the operating mode to DisabledUnsafe.
 const DEFAULT_MAXIMUM_SAFE_TEMPERATURE: f64 = 30.0;
-const DEFAULT_MINIMUM_SAFE_TEMPERATURE: f64 = 10.0; // degrees C
+const DEFAULT_MINIMUM_SAFE_TEMPERATURE: f64 = 15.0; // degrees C
 const DEFAULT_CURRENT_TEMPERATURE: f64 =
     (DEFAULT_MAXIMUM_SAFE_TEMPERATURE - DEFAULT_MINIMUM_SAFE_TEMPERATURE) / 2.0; // degrees C
 
@@ -315,6 +315,11 @@ impl Thermostat {
     pub fn use_measure(&mut self, measure: fn() -> Result<Measurement, Error>) {
         self.measure = measure;
         self.measure_handler_registered = true;
+    }
+
+    /// Get the current temperature
+    pub fn current_temperature(&self) -> f64 {
+        self.current_temperature
     }
 }
 
