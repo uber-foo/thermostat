@@ -100,6 +100,7 @@
 //! ```
 
 use core::result::Result;
+use core::fmt;
 
 /// Thermostat errors
 #[derive(Debug, Copy, Clone)]
@@ -112,6 +113,19 @@ pub enum Error {
     HandlerFailed,
     /// Indicates a measurement failed, indended to be used by thermostat measurement implementations
     MeasurementFailed,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("Thermostat Error: ")?;
+        let label = match *self {
+            Error::NoHandlerMethodRegistered => "no handler method registered",
+            Error::NoMeasurementHandlerRegistered => "no measurement handler registered",
+            Error::HandlerFailed => "handler failed",
+            Error::MeasurementFailed => "measurement failed",
+        };
+        f.write_str(&label)
+    }
 }
 
 // Safe temperatures control absolute limits that the thermostat logic will allow in any operating
