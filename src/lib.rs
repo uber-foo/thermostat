@@ -108,6 +108,10 @@ pub enum Error {
     NoHandlerMethodRegistered,
     /// Indicates a measurements cannot be made due to a missing measurement handler method
     NoMeasurementHandlerRegistered,
+    /// Indicates a handler failed, intended to be used by thermostat handler implementations
+    HandlerFailed,
+    /// Indicates a measurement failed, indended to be used by thermostat measurement implementations
+    MeasurementFailed,
 }
 
 // Safe temperatures control absolute limits that the thermostat logic will allow in any operating
@@ -320,6 +324,31 @@ impl Thermostat {
     /// Get the current temperature
     pub fn current_temperature(&self) -> f64 {
         self.current_temperature
+    }
+
+    /// Indicate that the thermostat should take a measurement and, if necessary, update state
+    pub fn tick(&mut self) -> Result<(), Error> {
+        let measurement = (self.measure)()?;
+        if (measurement.temperature < self.minimum_safe_temperature
+            && self.operating_mode != OperatingMode::DisabledUnsafe)
+            || (measurement.temperature < self.minimum_set_temperature
+                && self.operating_mode != OperatingMode::CoolToSetPoint)
+        {
+            (self.call_for_fan)()?;
+            (self.call_for_heat)()?;
+        } else if (measurement.temperature > self.maximum_safe_temperature
+            && self.operating_mode != OperatingMode::DisabledUnsafe)
+            || (measurement.temperature > self.maximum_set_temperature
+                && self.operating_mode != OperatingMode::HeatToSetPoint)
+        {
+            (self.call_for_fan)()?;
+            (self.call_for_cool)()?;
+        } else {
+            (self.stop_call_for_cool)()?;
+            (self.stop_call_for_heat)()?;
+            (self.stop_call_for_fan)()?;
+        }
+        Ok(())
     }
 }
 
