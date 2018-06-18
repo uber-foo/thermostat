@@ -1,6 +1,6 @@
 [package]
 name = "thermostat"
-version = "0.0.1"
+version = "0.0.2"
 authors = ["Sean Bruton <sean@uberfoo.net>"]
 description = "Finite state machine for a thermostat controlling a centralized HVAC system or other heating and/or cooling apparatus"
 repository = "https://github.com/uber-foo/cryptonomicon"

@@ -1,10 +1,9 @@
 #![doc(html_root_url = "https://docs.rs/thermostat")]
 #![doc(issue_tracker_base_url = "https://github.com/uber-foo/thermostat/issues/")]
 #![deny(
-    missing_docs, missing_debug_implementations, missing_copy_implementations, trivial_casts,
-    trivial_numeric_casts, unsafe_code, unstable_features, unused_import_braces,
-    unused_qualifications, unused_variables, unreachable_code, unused_comparisons, unused_imports,
-    unused_must_use
+    missing_docs, missing_copy_implementations, trivial_casts, trivial_numeric_casts, unsafe_code,
+    unstable_features, unused_import_braces, unused_qualifications, unused_variables,
+    unreachable_code, unused_comparisons, unused_imports, unused_must_use
 )]
 #![no_std]
 
@@ -30,60 +29,50 @@
 //! ```
 //! extern crate thermostat;
 //!
-//! use thermostat::{Measurement, OperatingMode, Thermostat, Error as ThermostatError};
+//! use thermostat::{OperatingMode, Thermostat, Error as ThermostatError, ThermostatInterface};
 //!
-//! enum HvacStatus {
-//!     HeatOn,
-//!     CoolOn,
-//!     Off,
-//! }
+//! struct MyThermostatInterface {}
+//! impl ThermostatInterface for MyThermostatInterface {
+//!     fn calling_for_heat(&self) -> Result<bool, ThermostatError> {
+//!         Ok(true) // return if we are currently calling for heat
+//!     }
+//!     fn call_for_heat(&self) -> Result<(), ThermostatError> {
+//!         Ok(())
+//!     }
+//!     fn stop_call_for_heat(&self) -> Result<(), ThermostatError> {
+//!         Ok(())
+//!     }
 //!
-//! fn call_for_heat() -> Result<(), ThermostatError> {
-//!     println!("calling for heat...");
-//!     Ok(())
-//! }
+//!     fn calling_for_cool(&self) -> Result<bool, ThermostatError> {
+//!         Ok(true) // return if we are currently calling for cool
+//!     }
+//!     fn call_for_cool(&self) -> Result<(), ThermostatError> {
+//!         Ok(())
+//!     }
+//!     fn stop_call_for_cool(&self) -> Result<(), ThermostatError> {
+//!         Ok(())
+//!     }
 //!
-//! fn stop_call_for_heat() -> Result<(), ThermostatError> {
-//!     println!("stopping call for heat...");
-//!     Ok(())
-//! }
+//!     fn calling_for_fan(&self) -> Result<bool, ThermostatError> {
+//!         Ok(true) // return if we are currently calling for fan
+//!     }
+//!     fn call_for_fan(&self) -> Result<(), ThermostatError> {
+//!         Ok(())
+//!     }
+//!     fn stop_call_for_fan(&self) -> Result<(), ThermostatError> {
+//!         Ok(())
+//!     }
 //!
-//! fn call_for_cool() -> Result<(), ThermostatError> {
-//!     println!("calling for cool...");
-//!     Ok(())
-//! }
-//!
-//! fn stop_call_for_cool() -> Result<(), ThermostatError> {
-//!     println!("stopping call for cool...");
-//!     Ok(())
-//! }
-//!
-//! fn call_for_fan() -> Result<(), ThermostatError> {
-//!     println!("calling for fan...");
-//!     Ok(())
-//! }
-//!
-//! fn stop_call_for_fan() -> Result<(), ThermostatError> {
-//!     println!("stopping call for fan...");
-//!     Ok(())
-//! }
-//!
-//! fn measure_temp_and_humidity() -> Result<Measurement, ThermostatError> {
-//!     Ok(Measurement {
-//!         temperature: 15.0,
-//!         humidity: 40.0,
-//!     })
+//!     fn get_seconds(&self) -> Result<u64, ThermostatError> {
+//!         Ok(0) // actually return seconds elapsed here
+//!     }
 //! }
 //!
 //! fn main() {
-//!     // create a new thermostat with default settings
-//!     let mut thermostat = Thermostat::default();
-//!
-//!     // register interfaces with device native implementation
-//!     thermostat.use_heat(call_for_heat, stop_call_for_heat);
-//!     thermostat.use_cool(call_for_cool, stop_call_for_cool);
-//!     thermostat.use_fan(call_for_fan, stop_call_for_fan);
-//!     thermostat.use_measure(measure_temp_and_humidity);
+//!     // create a new physical interface for the thermostat
+//!     let interface = MyThermostatInterface {};
+//!     // create a new thermostat with our physical interface
+//!     let mut thermostat = Thermostat::new(&interface);
 //!
 //!     // once the thermostat has been provided with a measure routine
 //!     // it will begin polling for new measurements and calling for
@@ -91,23 +80,62 @@
 //!     // been registered.
 //!
 //!     // set max temp thermostat will allow before calling for cool
-//!     thermostat.change_maximum_set_temperature(22.5).unwrap();
+//!     thermostat.set_maximum_set_temperature(22.5).unwrap();
 //!     // set min temp thermostat will allow before calling for heat
-//!     thermostat.change_minimum_set_temperature(18.0).unwrap();
+//!     thermostat.set_minimum_set_temperature(18.0).unwrap();
 //!     // maintain temperatures between min and max set points
-//!     thermostat.change_operating_mode(OperatingMode::MaintainRange).unwrap();
+//!     thermostat.set_operating_mode(OperatingMode::MaintainRange).unwrap();
 //! }
 //! ```
 
+use core::fmt;
 use core::result::Result;
 
 /// Thermostat errors
 #[derive(Debug, Copy, Clone)]
 pub enum Error {
-    /// Indicates a state change cannot be performed due to a missing handler method
-    NoHandlerMethodRegistered,
-    /// Indicates a measurements cannot be made due to a missing measurement handler method
-    NoMeasurementHandlerRegistered,
+    /// Indicates a handler failed, intended to be used by thermostat handler implementations
+    HandlerFailed,
+    /// Indicates a measurement failed, indended to be used by thermostat measurement implementations
+    MeasurementFailed,
+    /// Heating has met the maximum run time
+    HeatMaxRunTimeConstraint,
+    /// Heating has not yet met the minimum run time
+    HeatMinRunTimeConstraint,
+    /// Heating has not yet met the minimum off time between cycles
+    HeatMinOffTimeConstraint,
+    /// Cooling has met the maximum run time
+    CoolMaxRunTimeConstraint,
+    /// Cooling has not yet met the minimum run time
+    CoolMinRunTimeConstraint,
+    /// Cooling has not yet met the minimum off time between cycles
+    CoolMinOffTimeConstraint,
+    /// Fan has met the maximum run time
+    FanMaxRunTimeConstraint,
+    /// Fan has not yet met the minimum run time
+    FanMinRunTimeConstraint,
+    /// Fan has not yet met the minimum off time between cycles
+    FanMinOffTimeConstraint,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("Thermostat Error: ")?;
+        let label = match *self {
+            Error::HandlerFailed => "handler failed",
+            Error::MeasurementFailed => "measurement failed",
+            Error::HeatMaxRunTimeConstraint => "heat has reached maximum run time",
+            Error::HeatMinRunTimeConstraint => "heat has not yet reached minimum run time",
+            Error::HeatMinOffTimeConstraint => "heat has not yet reached minimum off time",
+            Error::CoolMaxRunTimeConstraint => "cool has reached maximum run time",
+            Error::CoolMinRunTimeConstraint => "cool has not yet reached minimum run time",
+            Error::CoolMinOffTimeConstraint => "cool has not yet reached minimum off time",
+            Error::FanMaxRunTimeConstraint => "fan has reached maximum run time",
+            Error::FanMinRunTimeConstraint => "fan has not yet reached minimum run time",
+            Error::FanMinOffTimeConstraint => "fan has not yet reached minimum off time",
+        };
+        f.write_str(&label)
+    }
 }
 
 // Safe temperatures control absolute limits that the thermostat logic will allow in any operating
@@ -115,7 +143,7 @@ pub enum Error {
 // the usage of the heating or cooling system be respected. The only way to override this behavior
 // is to set the operating mode to DisabledUnsafe.
 const DEFAULT_MAXIMUM_SAFE_TEMPERATURE: f64 = 30.0;
-const DEFAULT_MINIMUM_SAFE_TEMPERATURE: f64 = 10.0; // degrees C
+const DEFAULT_MINIMUM_SAFE_TEMPERATURE: f64 = 15.0; // degrees C
 const DEFAULT_CURRENT_TEMPERATURE: f64 =
     (DEFAULT_MAXIMUM_SAFE_TEMPERATURE - DEFAULT_MINIMUM_SAFE_TEMPERATURE) / 2.0; // degrees C
 
@@ -137,47 +165,74 @@ pub enum OperatingMode {
     DisabledUnsafe,
 }
 
-/// Temperature and humidity measurement
-#[derive(Copy, Clone, Debug)]
-pub struct Measurement {
-    /// current temperature in degrees Celsius
-    pub temperature: f64,
-    /// current percentage relative humidity
-    pub humidity: f64,
+impl fmt::Display for OperatingMode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match *self {
+            OperatingMode::MaintainRange => "Maintain Range",
+            OperatingMode::CoolToSetPoint => "Cool to Set Point",
+            OperatingMode::HeatToSetPoint => "Heat to Set Point",
+            OperatingMode::Disabled => "Disabled",
+            OperatingMode::DisabledUnsafe => "Disabled (Unsafe)",
+        })
+    }
 }
 
 /// Thermostat state machine
-#[derive(Copy, Clone, Debug)]
-pub struct Thermostat {
+#[derive(Copy, Clone)]
+pub struct Thermostat<'a> {
     operating_mode: OperatingMode,
     minimum_safe_temperature: f64,
     maximum_safe_temperature: f64,
     minimum_set_temperature: f64,
     maximum_set_temperature: f64,
     current_temperature: f64,
-    call_for_heat: fn() -> Result<(), Error>,
-    stop_call_for_heat: fn() -> Result<(), Error>,
-    heat_handlers_registered: bool,
-    call_for_cool: fn() -> Result<(), Error>,
-    stop_call_for_cool: fn() -> Result<(), Error>,
-    cool_handlers_registered: bool,
-    call_for_fan: fn() -> Result<(), Error>,
-    stop_call_for_fan: fn() -> Result<(), Error>,
-    fan_handlers_registered: bool,
-    measure: fn() -> Result<Measurement, Error>,
-    measure_handler_registered: bool,
+    interface: &'a ThermostatInterface,
+    last_call_for_heat_start: Option<u64>,
+    last_call_for_heat_end: Option<u64>,
+    last_call_for_cool_start: Option<u64>,
+    last_call_for_cool_end: Option<u64>,
+    last_call_for_fan_start: Option<u64>,
+    last_call_for_fan_end: Option<u64>,
+    minimum_heat_run_secs: u32,
+    maximum_heat_run_secs: u32,
+    minimum_heat_off_secs: u32,
+    minimum_cool_run_secs: u32,
+    maximum_cool_run_secs: u32,
+    minimum_cool_off_secs: u32,
+    minimum_fan_run_secs: u32,
+    maximum_fan_run_secs: u32,
+    minimum_fan_off_secs: u32,
 }
 
-fn null_handler() -> Result<(), Error> {
-    Err(Error::NoHandlerMethodRegistered)
+/// Wrapper for physical interface controls
+pub trait ThermostatInterface {
+    /// checks if we are calling for heat
+    fn calling_for_heat(&self) -> Result<bool, Error>;
+    /// calls for heat
+    fn call_for_heat(&self) -> Result<(), Error>;
+    /// stops call for heat
+    fn stop_call_for_heat(&self) -> Result<(), Error>;
+
+    /// checks if we are calling for cool
+    fn calling_for_cool(&self) -> Result<bool, Error>;
+    /// calls for cool
+    fn call_for_cool(&self) -> Result<(), Error>;
+    /// stops call for cool
+    fn stop_call_for_cool(&self) -> Result<(), Error>;
+
+    /// checks if we are calling for fan
+    fn calling_for_fan(&self) -> Result<bool, Error>;
+    /// calls for fan
+    fn call_for_fan(&self) -> Result<(), Error>;
+    /// stops call for fan
+    fn stop_call_for_fan(&self) -> Result<(), Error>;
+    /// gets seconds since system start
+    fn get_seconds(&self) -> Result<u64, Error>;
 }
 
-fn null_measure_handler() -> Result<Measurement, Error> {
-    Err(Error::NoMeasurementHandlerRegistered)
-}
-
-impl Default for Thermostat {
-    fn default() -> Self {
+impl<'a> Thermostat<'a> {
+    /// Create a new thermostat using the provided interface
+    pub fn new(interface: &ThermostatInterface) -> Thermostat {
         Thermostat {
             operating_mode: DEFAULT_OPERATING_MODE,
             minimum_safe_temperature: DEFAULT_MINIMUM_SAFE_TEMPERATURE,
@@ -185,27 +240,30 @@ impl Default for Thermostat {
             minimum_set_temperature: DEFAULT_MINIMUM_SAFE_TEMPERATURE,
             maximum_set_temperature: DEFAULT_MAXIMUM_SAFE_TEMPERATURE,
             current_temperature: DEFAULT_CURRENT_TEMPERATURE,
-            call_for_heat: null_handler,
-            stop_call_for_heat: null_handler,
-            heat_handlers_registered: false,
-            call_for_cool: null_handler,
-            stop_call_for_cool: null_handler,
-            cool_handlers_registered: false,
-            call_for_fan: null_handler,
-            stop_call_for_fan: null_handler,
-            fan_handlers_registered: false,
-            measure: null_measure_handler,
-            measure_handler_registered: false,
+            interface,
+            last_call_for_heat_start: None,
+            last_call_for_heat_end: None,
+            last_call_for_cool_start: None,
+            last_call_for_cool_end: None,
+            last_call_for_fan_start: None,
+            last_call_for_fan_end: None,
+            minimum_heat_run_secs: 600,
+            maximum_heat_run_secs: 3600,
+            minimum_heat_off_secs: 300,
+            minimum_cool_run_secs: 600,
+            maximum_cool_run_secs: 3600,
+            minimum_cool_off_secs: 300,
+            minimum_fan_run_secs: 300,
+            maximum_fan_run_secs: 43200,
+            minimum_fan_off_secs: 300,
         }
     }
-}
 
-impl Thermostat {
     /// Change the current operating mode.
     ///
     /// Will return an Err result if the specified operating mode is incompatible with the current
     /// configuration.
-    pub fn change_operating_mode(&mut self, operating_mode: OperatingMode) -> Result<(), Error> {
+    pub fn set_operating_mode(&mut self, operating_mode: OperatingMode) -> Result<(), Error> {
         self.operating_mode = operating_mode;
         Ok(())
     }
@@ -221,7 +279,7 @@ impl Thermostat {
     ///
     /// An Err Result is returned if the specified temperature is not within the bounds of the
     /// minimum and maximum safe temperatures.
-    pub fn change_maximum_safe_temperature(&mut self, temperature: f64) -> Result<(), Error> {
+    pub fn set_maximum_safe_temperature(&mut self, temperature: f64) -> Result<(), Error> {
         self.maximum_safe_temperature = temperature;
         Ok(())
     }
@@ -237,7 +295,7 @@ impl Thermostat {
     ///
     /// An Err Result is returned if the specified temperature is not within the bounds of the
     /// minimum and maximum safe temperatures.
-    pub fn change_minimum_safe_temperature(&mut self, temperature: f64) -> Result<(), Error> {
+    pub fn set_minimum_safe_temperature(&mut self, temperature: f64) -> Result<(), Error> {
         self.minimum_safe_temperature = temperature;
         Ok(())
     }
@@ -253,7 +311,7 @@ impl Thermostat {
     ///
     /// An Err Result is returned if the specified temperature is not within the bounds of the
     /// minimum and maximum safe temperatures.
-    pub fn change_maximum_set_temperature(&mut self, temperature: f64) -> Result<(), Error> {
+    pub fn set_maximum_set_temperature(&mut self, temperature: f64) -> Result<(), Error> {
         self.maximum_set_temperature = temperature;
         Ok(())
     }
@@ -269,7 +327,7 @@ impl Thermostat {
     ///
     /// An Err Result is returned if the specified temperature is not within the bounds of the
     /// minimum and maximum safe temperatures.
-    pub fn change_minimum_set_temperature(&mut self, temperature: f64) -> Result<(), Error> {
+    pub fn set_minimum_set_temperature(&mut self, temperature: f64) -> Result<(), Error> {
         self.minimum_set_temperature = temperature;
         Ok(())
     }
@@ -278,166 +336,147 @@ impl Thermostat {
         self.minimum_set_temperature
     }
 
-    /// Register handlers to call for heat and cancel a call for heat.
-    pub fn use_heat(
-        &mut self,
-        call_for_heat: fn() -> Result<(), Error>,
-        stop_call_for_heat: fn() -> Result<(), Error>,
-    ) {
-        self.call_for_heat = call_for_heat;
-        self.stop_call_for_heat = stop_call_for_heat;
-        self.heat_handlers_registered = true;
+    /// Get the current temperature as known to the thermostat
+    pub fn get_current_temperature(&self) -> f64 {
+        self.current_temperature
     }
 
-    /// Register handlers to call for cool and cancel a call for cool.
-    pub fn use_cool(
-        &mut self,
-        call_for_cool: fn() -> Result<(), Error>,
-        stop_call_for_cool: fn() -> Result<(), Error>,
-    ) {
-        self.call_for_cool = call_for_cool;
-        self.stop_call_for_cool = stop_call_for_cool;
-        self.cool_handlers_registered = true;
+    fn start_heat(&mut self) -> Result<(), Error> {
+        if !self.interface.calling_for_heat()? {
+            let now = self.interface.get_seconds()?;
+            if now - self.last_call_for_heat_end.unwrap_or(0) >= self.minimum_heat_off_secs as u64 {
+                self.interface.call_for_heat()?; // we have been off long enough to start
+                self.last_call_for_heat_start = Some(now);
+                Ok(())
+            } else {
+                Err(Error::HeatMinOffTimeConstraint) // we haven't been off long enough
+            }
+        } else {
+            Ok(()) // we're already heating
+        }
     }
 
-    /// Register handlers to call for fan and cancel a call for fan.
-    pub fn use_fan(
-        &mut self,
-        call_for_fan: fn() -> Result<(), Error>,
-        stop_call_for_fan: fn() -> Result<(), Error>,
-    ) {
-        self.call_for_fan = call_for_fan;
-        self.stop_call_for_fan = stop_call_for_fan;
-        self.fan_handlers_registered = true;
+    fn stop_heat(&mut self) -> Result<(), Error> {
+        if self.interface.calling_for_heat()? {
+            let now = self.interface.get_seconds()?;
+            if now - self.last_call_for_heat_start.unwrap_or(0) >= self.minimum_heat_run_secs as u64
+            {
+                self.interface.stop_call_for_heat()?; // we have been running long enough to shut down
+                self.last_call_for_heat_end = Some(now);
+                Ok(())
+            } else {
+                Err(Error::HeatMinRunTimeConstraint) // we haven't been running long enough
+            }
+        } else {
+            Ok(()) // no current call for heat
+        }
     }
 
-    /// Register handler to obtain current measurements
-    pub fn use_measure(&mut self, measure: fn() -> Result<Measurement, Error>) {
-        self.measure = measure;
-        self.measure_handler_registered = true;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn thermo_default_uses_default_values() {
-        let thermostat = Thermostat::default();
-        assert_eq!(thermostat.get_operating_mode(), DEFAULT_OPERATING_MODE);
-        assert_eq!(
-            thermostat.get_maximum_safe_temperature(),
-            DEFAULT_MAXIMUM_SAFE_TEMPERATURE
-        );
-        assert_eq!(
-            thermostat.get_minimum_safe_temperature(),
-            DEFAULT_MINIMUM_SAFE_TEMPERATURE
-        );
-        assert_eq!(
-            thermostat.get_maximum_set_temperature(),
-            DEFAULT_MAXIMUM_SAFE_TEMPERATURE
-        );
-        assert_eq!(
-            thermostat.get_minimum_set_temperature(),
-            DEFAULT_MINIMUM_SAFE_TEMPERATURE
-        );
+    fn start_cool(&mut self) -> Result<(), Error> {
+        if !self.interface.calling_for_cool()? {
+            let now = self.interface.get_seconds()?;
+            if now - self.last_call_for_cool_end.unwrap_or(0) >= self.minimum_cool_off_secs as u64 {
+                self.interface.call_for_cool()?; // we have been off long enough to start
+                self.last_call_for_cool_start = Some(now);
+                Ok(())
+            } else {
+                Err(Error::CoolMinOffTimeConstraint) // we haven't been off long enough
+            }
+        } else {
+            Ok(()) // we're already cooling
+        }
     }
 
-    #[test]
-    fn thermo_changes_operating_mode() {
-        let mut thermostat = Thermostat::default();
-        thermostat
-            .change_operating_mode(OperatingMode::MaintainRange)
-            .unwrap();
-        assert_eq!(
-            thermostat.get_operating_mode(),
-            OperatingMode::MaintainRange
-        );
-        thermostat
-            .change_operating_mode(OperatingMode::CoolToSetPoint)
-            .unwrap();
-        assert_eq!(
-            thermostat.get_operating_mode(),
-            OperatingMode::CoolToSetPoint
-        );
-        thermostat
-            .change_operating_mode(OperatingMode::HeatToSetPoint)
-            .unwrap();
-        assert_eq!(
-            thermostat.get_operating_mode(),
-            OperatingMode::HeatToSetPoint
-        );
-        thermostat
-            .change_operating_mode(OperatingMode::Disabled)
-            .unwrap();
-        assert_eq!(thermostat.get_operating_mode(), OperatingMode::Disabled);
-        thermostat
-            .change_operating_mode(OperatingMode::DisabledUnsafe)
-            .unwrap();
-        assert_eq!(
-            thermostat.get_operating_mode(),
-            OperatingMode::DisabledUnsafe
-        );
+    fn stop_cool(&mut self) -> Result<(), Error> {
+        if self.interface.calling_for_cool()? {
+            let now = self.interface.get_seconds()?;
+            if now - self.last_call_for_cool_start.unwrap_or(0) >= self.minimum_cool_run_secs as u64
+            {
+                self.interface.stop_call_for_cool()?; // we have been running long enough to shut down
+                self.last_call_for_cool_end = Some(now);
+                Ok(())
+            } else {
+                Err(Error::CoolMinRunTimeConstraint) // we haven't been running long enough
+            }
+        } else {
+            Ok(()) // no current call for cool
+        }
     }
 
-    #[test]
-    fn thermo_changes_maximum_safe_temperature() {
-        let mut thermostat = Thermostat::default();
-        thermostat.change_maximum_safe_temperature(5.0).unwrap();
-        assert_eq!(thermostat.get_maximum_safe_temperature(), 5.0);
-        thermostat.change_maximum_safe_temperature(15.0).unwrap();
-        assert_eq!(thermostat.get_maximum_safe_temperature(), 15.0);
-        thermostat.change_maximum_safe_temperature(-15.0).unwrap();
-        assert_eq!(thermostat.get_maximum_safe_temperature(), -15.0);
-        thermostat.change_maximum_safe_temperature(-5.0).unwrap();
-        assert_eq!(thermostat.get_maximum_safe_temperature(), -5.0);
-        thermostat.change_maximum_safe_temperature(0.0).unwrap();
-        assert_eq!(thermostat.get_maximum_safe_temperature(), -0.0);
+    fn start_fan(&mut self) -> Result<(), Error> {
+        if !self.interface.calling_for_fan()? {
+            let now = self.interface.get_seconds()?;
+            if now - self.last_call_for_fan_end.unwrap_or(0) >= self.minimum_fan_off_secs as u64 {
+                self.interface.call_for_fan()?; // we have been off long enough to start
+                self.last_call_for_fan_start = Some(now);
+                Ok(())
+            } else {
+                Err(Error::FanMinOffTimeConstraint) // we haven't been off long enough
+            }
+        } else {
+            Ok(()) // we're already faning
+        }
     }
 
-    #[test]
-    fn thermo_changes_minimum_safe_temperature() {
-        let mut thermostat = Thermostat::default();
-        thermostat.change_minimum_safe_temperature(5.0).unwrap();
-        assert_eq!(thermostat.get_minimum_safe_temperature(), 5.0);
-        thermostat.change_minimum_safe_temperature(15.0).unwrap();
-        assert_eq!(thermostat.get_minimum_safe_temperature(), 15.0);
-        thermostat.change_minimum_safe_temperature(-15.0).unwrap();
-        assert_eq!(thermostat.get_minimum_safe_temperature(), -15.0);
-        thermostat.change_minimum_safe_temperature(-5.0).unwrap();
-        assert_eq!(thermostat.get_minimum_safe_temperature(), -5.0);
-        thermostat.change_minimum_safe_temperature(0.0).unwrap();
-        assert_eq!(thermostat.get_minimum_safe_temperature(), -0.0);
+    fn stop_fan(&mut self) -> Result<(), Error> {
+        if self.interface.calling_for_fan()? {
+            let now = self.interface.get_seconds()?;
+            if now - self.last_call_for_fan_start.unwrap_or(0) >= self.minimum_fan_run_secs as u64 {
+                self.interface.stop_call_for_fan()?; // we have been running long enough to shut down
+                self.last_call_for_fan_end = Some(now);
+                Ok(())
+            } else {
+                Err(Error::FanMinRunTimeConstraint) // we haven't been running long enough
+            }
+        } else {
+            Ok(()) // no current call for fan
+        }
     }
 
-    #[test]
-    fn thermo_changes_maximum_set_temperature() {
-        let mut thermostat = Thermostat::default();
-        thermostat.change_maximum_set_temperature(5.0).unwrap();
-        assert_eq!(thermostat.get_maximum_set_temperature(), 5.0);
-        thermostat.change_maximum_set_temperature(15.0).unwrap();
-        assert_eq!(thermostat.get_maximum_set_temperature(), 15.0);
-        thermostat.change_maximum_set_temperature(-15.0).unwrap();
-        assert_eq!(thermostat.get_maximum_set_temperature(), -15.0);
-        thermostat.change_maximum_set_temperature(-5.0).unwrap();
-        assert_eq!(thermostat.get_maximum_set_temperature(), -5.0);
-        thermostat.change_maximum_set_temperature(0.0).unwrap();
-        assert_eq!(thermostat.get_maximum_set_temperature(), -0.0);
+    fn heat(&mut self) -> Result<(), Error> {
+        self.stop_cool()?;
+        self.start_fan()?;
+        self.start_heat()?;
+        Ok(())
     }
 
-    #[test]
-    fn thermo_changes_minimum_set_temperature() {
-        let mut thermostat = Thermostat::default();
-        thermostat.change_minimum_set_temperature(5.0).unwrap();
-        assert_eq!(thermostat.get_minimum_set_temperature(), 5.0);
-        thermostat.change_minimum_set_temperature(15.0).unwrap();
-        assert_eq!(thermostat.get_minimum_set_temperature(), 15.0);
-        thermostat.change_minimum_set_temperature(-15.0).unwrap();
-        assert_eq!(thermostat.get_minimum_set_temperature(), -15.0);
-        thermostat.change_minimum_set_temperature(-5.0).unwrap();
-        assert_eq!(thermostat.get_minimum_set_temperature(), -5.0);
-        thermostat.change_minimum_set_temperature(0.0).unwrap();
-        assert_eq!(thermostat.get_minimum_set_temperature(), -0.0);
+    fn cool(&mut self) -> Result<(), Error> {
+        self.stop_heat()?;
+        self.start_fan()?;
+        self.start_cool()?;
+        Ok(())
+    }
+
+    fn fan(&mut self) -> Result<(), Error> {
+        self.start_fan()?;
+        Ok(())
+    }
+
+    fn off(&mut self) -> Result<(), Error> {
+        self.stop_cool()?;
+        self.stop_heat()?;
+        self.stop_fan()?;
+        Ok(())
+    }
+
+    /// Update the thermostat with a new temperature reading
+    pub fn set_current_temperature(&mut self, temperature: f64) -> Result<(), Error> {
+        self.current_temperature = temperature;
+        if (temperature < self.minimum_safe_temperature
+            && self.operating_mode != OperatingMode::DisabledUnsafe)
+            || (temperature < self.minimum_set_temperature
+                && self.operating_mode != OperatingMode::CoolToSetPoint)
+        {
+            self.heat()?
+        } else if (temperature > self.maximum_safe_temperature
+            && self.operating_mode != OperatingMode::DisabledUnsafe)
+            || (temperature > self.maximum_set_temperature
+                && self.operating_mode != OperatingMode::HeatToSetPoint)
+        {
+            self.cool()?
+        } else {
+            self.off()?
+        }
+        Ok(())
     }
 }
